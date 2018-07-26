@@ -1,0 +1,197 @@
+#+startup: overview
+     
+#+BEGIN_SRC elisp :results verbatim :tangle ~/src/org-mode/testing/lisp/test-ob-rust.el
+  ;;; test-ob-rust.el --- tests for ob-rust.el
+
+  ;; Copyright (c) 2017 Andrés Saraos Luna
+  ;; Authors: Andrés Saraos Luna
+
+  ;; This file is not part of GNU Emacs.
+
+  ;; This program is free software; you can redistribute it and/or modify
+  ;; it under the terms of the GNU General Public License as published by
+  ;; the Free Software Foundation, either version 3 of the License, or
+  ;; (at your option) any later version.
+
+  ;; This program is distributed in the hope that it will be useful,
+  ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ;; GNU General Public License for more details.
+
+  ;; You should have received a copy of the GNU General Public License
+  ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+  (ert-deftest ob-rust/simple ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-simple")
+        (should (= 42 (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/main-wrapper ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-main-wrapper")
+        (should (= 42 (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/var-integer ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-var-integer")
+        (should (= 42 (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/var-float ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-var-float")
+        (should (= 3.14 (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/var-char ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-var-char")
+        (should (string= "x" (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/var-string ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-var-string")
+        (should (string= "GOAT" (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/var-bool-true ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-var-bool-true")
+        (should (= 42 (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/var-bool-false ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-var-bool-false")
+        (should (= 42 (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/var-mutable ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-var-mutable")
+        (should (= 42 (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/var-given-type ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-var-given-type")
+        (should (= 42 (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/var-mutable-and-given-type ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-var-mutable-and-given-type")
+        (should (= 42 (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/var-no-main-wrapper ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-var-no-main-wrapper")
+        (should (= 42 (org-babel-execute-src-block))))))
+
+  (ert-deftest ob-rust/uses-and-command-line-arguments ()
+    (when (executable-find org-babel-rust-command)
+      (with-temp-buffer
+        (insert-file-contents "ob-rust-test.org")
+        (org-babel-goto-named-src-block "test-uses-and-command-line-arguments")
+        (should (equal '((1 . (2 . ("bonjour")))) (org-babel-execute-src-block))))))
+#+END_SRC
+
+#+RESULTS:
+: ob-rust/uses-and-command-line-arguments
+
+#+name: test-simple
+#+BEGIN_SRC rust :results silent
+  fn main() {
+      let answer = 42;
+      println!("{}", answer);
+  }
+#+END_SRC
+
+#+name: test-main-wrapper
+#+BEGIN_SRC rust :results silent
+  let answer = 42;
+  println!("{}", answer);
+#+END_SRC
+
+#+name: test-var-integer
+#+BEGIN_SRC rust :var answer=42 :results silent
+  println!("{}", answer);
+#+END_SRC
+
+#+name: test-var-float
+#+BEGIN_SRC rust :var pi=3.14 :results silent
+  println!("{}", pi);
+#+END_SRC
+
+#+name: test-var-char
+#+BEGIN_SRC rust :var answer='x' :results silent
+  println!("{}", answer);
+#+END_SRC
+
+#+name: test-var-string
+#+BEGIN_SRC rust :var answer="GOAT" :results silent
+  println!("{}", answer);
+#+END_SRC
+
+#+name: test-var-bool-true
+#+BEGIN_SRC rust :var test='true :results silent
+  if test {
+    println!("42");
+  }
+#+END_SRC
+
+#+name: test-var-bool-false
+#+BEGIN_SRC rust :var test="false" :results silent
+  if !test {
+    println!("42");
+  }
+#+END_SRC
+
+#+name: test-var-mutable
+#+BEGIN_SRC rust :var mut_answer=41 :results silent
+  answer = 42;
+  println!("{}", answer);
+#+END_SRC
+
+#+name: test-var-given-type
+#+BEGIN_SRC rust :var answer:i32=40 :results silent
+  let additional_answer: i32 = 2;
+  println!("{}", answer + additional_answer);
+#+END_SRC
+
+#+name: test-var-mutable-and-given-type
+#+BEGIN_SRC rust :var mut_answer:i32=40 :results silent
+  let additional_answer: i32 = 2;
+  answer = answer + additional_answer;
+  println!("{}", answer);
+#+END_SRC
+
+#+name: test-var-no-main-wrapper
+#+BEGIN_SRC rust :var answer=42 :results silent
+  fn main() {
+      println!("{}", answer);
+  }
+#+END_SRC
+
+#+name: test-uses-and-command-line-arguments
+#+BEGIN_SRC rust :use std::env :cmdline 1 2 bonjour :results silent
+  let args: Vec<String> = env::args().collect();
+  println!("{}, {}, {}", args[1], args[2], args[3]);
+#+END_SRC

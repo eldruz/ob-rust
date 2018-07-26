@@ -1,0 +1,1351 @@
+#+STARTUP: overview
+
+* Application : ob-rust.el
+
+** Setup
+
+#+BEGIN_SRC elisp :results silent
+  (org-babel-do-load-languages
+   'org-babel-load-languages
+   '((C . t)
+     (shell . t)
+     (emacs-lisp . t)
+     (python . t)
+     (rust . t)))
+#+END_SRC
+
+** 0.1
+
++ On compile avec =rustc=, pas de =cargo=.
++ On suppose que le bloc de code contient un main.
+
+#+name: ob-rust-0.1
+#+BEGIN_SRC elisp
+  (require 'ob)
+
+  (defvar org-babel-tangle-lang-exts)
+  (add-to-list 'org-babel-tangle-lang-exts '("rust" . "rs"))
+
+  (defcustom org-babel-rust-command "rustc"
+    "Name of the rust command."
+    :group 'org-babel
+    :type 'string)
+
+  (defun org-babel-execute:rust (body params)
+    (let* ((full-body (org-babel-expand-body:generic body params))
+           (src-file (org-babel-temp-file "rust-src-" ".rs"))
+           (exe-file (file-name-sans-extension src-file))
+           (results)
+           (default-directory org-babel-temporary-directory))
+      (with-temp-file src-file (insert full-body))
+      (org-babel-eval
+       (format "%s %s" org-babel-rust-command src-file) "")
+      (setq results (org-babel-eval (format "%s" exe-file) ""))
+      (org-babel-reassemble-table
+       (org-babel-result-cond (cdr (assq :result-params params))
+         (org-babel-read results)
+         (let ((tmp-file (org-babel-temp-file "rs-")))
+           (with-temp-file tmp-file (insert results))
+           (org-babel-import-elisp-from-file tmp-file)))
+       (org-babel-pick-name
+        (cdr (assq :colname-names params)) (cdr (assq :colnames params)))
+       (org-babel-pick-name
+        (cdr (assq :rowname-names params)) (cdr (assq :rownames params))))))
+
+  (provide 'ob-rust)
+#+END_SRC
+
+#+RESULTS:
+: ob-rust
+
+*** Tests
+
+Hello world.
+*résultat attendu* : Hello, world!
+#+BEGIN_SRC rust :results raw replace
+  fn main() {
+      println!("Hello, world!");
+  }
+#+END_SRC
+
+#+RESULTS:
+Hello, world!
+
+*** Review
+
+Je me suis beaucoup basé sur le code de la version csharp pour le créer. J'ai choisi de faire au plus
+simple et de ne pas m'encombrer avec le support des arguments de compilation et d'exécution.
+
+J'ai refactoré le code en ne faisant pas un =(let ...)= imbriqué dans le premier pour la définition du
+résultat, ça me paraissait alourdir le code pour pas grand chose. A la place, j'ai défini la variable
+qui contiendra le résultat de l'exécution à vide, et je lui ai assigné une valeur après. Je ne sais
+pas quelle méthode est vraiment plus idiomatique, simplement celle ci m'a paru plus prore. De la même
+façon, je me suis passé du =(progn ...)= pour enchaîner les forms puisqu'il me semble qu'avec un =let=
+on ne renvoie déjà que le résultat de la dernière évaluation.
+
+Du coup je n'ai pas bien compris dans quel cas utilisé un =progn=. Il me semble que lorsqu'on doit
+assigner une variable une valeur calculée après plusieurs évaluations, le =progn= est indiqué. Je ne
+sais plus si on a le droit de mettre plusieurs forms dans la partie évaluée d'un =setq= ou d'un =let=,
+à vérifier.
+
+Le plus gros problème que j'ai eu a été le dossier de destination de génération de l'exécutable. Pour
+une raison inconnue, l'exécutable était généré dans le dossier du fichier org, qui correspond à la
+variable =default-directory= d'emacs, utilisée par =babel-eval=. L'évaluation du fichier exécutable
+échouait parce que le chemin ne correspondait pas. J'ai contourné le problème en assignant à
+=default-directory= la valeur du dossier temporaire babel où était crée le fichier source dans le
+=let=, de sorte à ce que le dossier reprenne sa valeur précédente à la sortie de la fonction. Tout
+fonctionne mais je ne suis pas hyper satisfait de la solution vu que je ne suis pas sûr de comprendre
+ce qui se passe exactement.
+
+*** Next
+
++ ajouter les flags de compilation et d'exécution
+
+** 0.2
+
+Pour récupérer des variables de header passées dans le bloc source :
+#+BEGIN_SRC elisp
+  (var-name (cdr (assq :param-name params)))
+  (var-name (or (cdr (assq :param-name params)) ""))
+#+END_SRC
+
+#+name: ob-rust-0.2
+#+BEGIN_SRC elisp
+  (require 'ob)
+
+  (defvar org-babel-tangle-lang-exts)
+  (add-to-list 'org-babel-tangle-lang-exts '("rust" . "rs"))
+
+  (defcustom org-babel-rust-command "rustc"
+    "Name of the rust command."
+    :group 'org-babel
+    :type 'string)
+
+  (defun org-babel-execute:rust (body params)
+    (let* ((full-body (org-babel-expand-body:generic body params))
+           (src-file (org-babel-temp-file "rust-src-" ".rs"))
+           (exe-file (file-name-sans-extension src-file))
+           (cmpflag (or (cdr (assq :cmpflag params)) ""))
+           (cmdline (or (cdr (assq :cmdline params)) ""))
+           (default-directory org-babel-temporary-directory)
+           (results))
+      (with-temp-file src-file (insert full-body))
+      (org-babel-eval
+       (format "%s %s %s" org-babel-rust-command cmpflag src-file) "")
+      (setq results (org-babel-eval (format "%s %s" exe-file cmdline) ""))
+      (org-babel-reassemble-table
+       (org-babel-result-cond (cdr (assq :result-params params))
+         (org-babel-read results)
+         (let ((tmp-file (org-babel-temp-file "rs-")))
+           (with-temp-file tmp-file (insert results))
+           (org-babel-import-elisp-from-file tmp-file)))
+       (org-babel-pick-name
+        (cdr (assq :colname-names params)) (cdr (assq :colnames params)))
+       (org-babel-pick-name
+        (cdr (assq :rowname-names params)) (cdr (assq :rownames params))))))
+
+  (provide 'ob-rust)
+#+END_SRC
+
+#+RESULTS: ob-rust-0.2
+: ob-rust
+
+*** Tests
+
+Je ne suis pas sûr de comment vraiment tester les arguments passés à la compilation, je n'ai pas
+l'impression qu'ils soient vraiment utiles avec org babel, pour le moment en tout cas.
+
+Ne s'exécute pas parce que le fichier ~prout~ est introuvable.
+*résultat attendu* : error
+#+BEGIN_SRC rust :cmpflag -o prout
+  fn main() {
+      println!("Hello, world!");
+  }
+#+END_SRC
+
+Doit afficher les arguments passés à l'exécutable
+*résultat attendu* : ["filename" (\, "1") (\, "2") (\, "bonjour")]
+#+BEGIN_SRC rust :cmdline 1 2 bonjour :results raw
+  use std::env;
+
+  fn main() {
+      let args: Vec<String> = env::args().collect();
+      println!("{:?}", args);
+  }
+#+END_SRC
+
+#+RESULTS:
+["/tmp/babel-1181JKm/rust-src-1181-7L" (\, "1") (\, "2") (\, "bonjour")]
+
+*** Review
+
+Rien de particulier ici, tout était simple à mettre en oeuvre. La seule difficulté est de trouver des
+tests qui vaillent le coup pour le passage des flags de compilation, à part créer un cas qui échoue je
+n'ai pas eu d'idée.
+
+Je comprends bien maintenant que les arguments passés aux blocs sources sont spécifiques au langage
+utilisé, pout trouver des informations dessus il vaut donc mieux passer par le code source plutôt que
+par la documentation du site.
+
+Le problème que j'ai relevé vient avec les arguments =-o= et =--out-dir= de la compilation, qui
+donnent un nom de fichier -- pouvant être un chemin complet -- ou un chemin de destination,
+respectivement. Dans ce cas l'évaluation échouera puisque le fichier sera introuvable.
+
+On peut potentiellement avoir le même problème avec l'argument =emit=, mais vu que je ne comprends pas
+trop ce qu'il fait ou comment il fonctionne on va le laisser de côté pour le moment.
+
+*** Next
+
++ Gérer le cas où les arguments =-o= ou =--out-dir= sont donnés
+
+** 0.2.1
+
+Il faut :
++ parser la variable =cmpflag= pour chercher les valeurs des arguments =-o= et =--out-dir=
+  + =--out-dir= est ignoré si =-o= est présent
+  + =-o= est ignoré si il y'a des =emit=
++ Si =-o= est présent :
+  + si la valeur donnée est un chemin complet :
+    + donner sa valeur au nom du fichier exécutable généré
+  + sinon :
+    + récupérer le nom du fichier source sans extension
+    + mettre default-directory à la valeur donnée par =org-babel-temporary-directory==
++ Sinon, si =--out-dir= est présent :
+  + récupérer le nom du fichier source sans extension
+  + mettre default-directory à la valeur donnée par =--out-dir==
++ Sinon
+  + récupérer le nom du fichier source sans extension
+  + mettre default-directory à la valeur donnée par =org-babel-temporary-directory==
+
+Il y'a clairement beaucoup de choix qui se recoupent, il va falloir refactorer ça proprement,
+probablement en utilisant une fonction pour être propre.
+
+#+name: ob-rust-0.2.1
+#+BEGIN_SRC elisp
+  (require 'ob)
+
+  (defvar org-babel-tangle-lang-exts)
+  (add-to-list 'org-babel-tangle-lang-exts '("rust" . "rs"))
+
+  (defcustom org-babel-rust-command "rustc"
+    "Name of the rust command."
+    :group 'org-babel
+    :type 'string)
+
+  (defun org-babel-execute:rust (body params)
+    (let* ((full-body (org-babel-expand-body:generic body params))
+           (cmpflag (or (cdr (assq :cmpflag params)) ""))
+           (cmdline (or (cdr (assq :cmdline params)) ""))
+           (default-directory org-babel-temporary-directory)
+           (src-file (org-babel-temp-file "rust-src-" ".rs"))
+           (out-file (nth 1 (member "-o" (split-string cmpflag " "))))
+           (out-dir (nth 1 (member "--out-dir" (split-string cmpflag " "))))
+           (exe-file
+            (cond
+             (out-file
+              (if (string-match-p "^/" out-file) ;naive file path detection
+                  out-file
+                (format "%s/%s" default-directory out-file)))
+             (out-dir
+              (format "%s/%s" out-dir (file-name-base src-file)))
+             (t (file-name-sans-extension src-file))))
+           (results))
+      (with-temp-file src-file (insert full-body))
+      (org-babel-eval
+       (format "%s %s %s" org-babel-rust-command cmpflag src-file) "")
+      (setq results (org-babel-eval (format "%s %s" exe-file cmdline) ""))
+      (org-babel-reassemble-table
+       (org-babel-result-cond (cdr (assq :result-params params))
+         (org-babel-read results)
+         (let ((tmp-file (org-babel-temp-file "rs-")))
+           (with-temp-file tmp-file (insert results))
+           (org-babel-import-elisp-from-file tmp-file)))
+       (org-babel-pick-name
+        (cdr (assq :colname-names params)) (cdr (assq :colnames params)))
+       (org-babel-pick-name
+        (cdr (assq :rowname-names params)) (cdr (assq :rownames params))))))
+
+  (provide 'ob-rust)
+#+END_SRC
+
+#+RESULTS: ob-rust-0.2.1
+: ob-rust
+
+*** Tests
+    :PROPERTIES:
+    :CUSTOM_ID: 0.2.1-tests
+    :END:
+
+S'exécute normalement, un fichier ~prout~ exécutable est bien généré.
+*résultat attendu* : Hello, world!
+#+BEGIN_SRC rust :cmpflag -o prout :results verbatim
+  fn main() {
+      println!("Hello, world!");
+  }
+#+END_SRC
+
+#+RESULTS:
+: Hello, world!
+
+S'exécute normalement, un fichier exécutable est généré dans $HOME.
+*résultat attendu* : Hello, world!
+#+BEGIN_SRC rust :cmpflag --out-dir /home/eldruz :results verbatim
+  fn main() {
+      println!("Hello, world!");
+  }
+#+END_SRC
+
+#+RESULTS:
+: Hello, world!
+
+S'exécute normalement, l'argument =--out-dir= a été ignoré.
+*résultat attendu* : Hello, world!
+#+BEGIN_SRC rust :cmpflag -o pataprout --out-dir /home/eldruz :results verbatim
+  fn main() {
+      println!("Hello, world!");
+  }
+#+END_SRC
+
+#+RESULTS:
+: Hello, world!
+
+S'exécute normalement, le fichier généré est =/home/eldruz/pataprout=.
+*résultat attendu* : Hello, world!
+#+BEGIN_SRC rust :cmpflag -o /home/eldruz/pataprout :results verbatim
+  fn main() {
+      println!("Hello, world!");
+  }
+#+END_SRC
+
+#+RESULTS:
+: Hello, world!
+
+*** Review
+    :PROPERTIES:
+    :CUSTOM_ID: 0.2.1-review
+    :END:
+
+Temps passé : ~2h
+
+Le plus clair du temps a été passé à vérifier le type et les valeurs des paramètres passés dans la
+fonction et à trouver les fonctions me permettant de manipuler les strings comme je le voulais. Dans
+l'esprit du "marche d'abord et on verra ensuite" j'ai employé quelques techniques naïves et j'ai évité
+de refactorer dans une fonction séparée avant d'avoir bien vérifié que tout fonctionne.
+
+Améliorations possibles :
++ ne pas passer par une liste intermédiaire pour chercher la valeur des éventuels arguments mais tout
+  faire via une expression régulière, le code ne serait pas forcément plus clair mais le traitement
+  serait je pense plus rapide,
++ avoir une fonction qui détecte si un string est un chemin valide plus proprement que ce qui est fait
+  ici, où l'on teste simplement si le premier caractère est un =/=,
++ sortir toute la conditionnelle et la déclaration des variables de la fonction et les passer dans une
+  fonction dédiée.
+
+Je me sens plus à l'aise à écrire et explorer du code lisp. Les modifications prévues étaient simples
+et m'ont permis de ne pas me perdre lors de l'exploration de fonctions.
+
+*** Next
+
+Refactorer toutes les possibles valeurs pour =exe-file= dans une fonction dédiée, facilement
+augmentable et modifiable. L'objectif est de pouvoir dans le futur ajouter des fonctionnalités (la
+gestion du paramètre =emit=) et modifier/améliorer la manière dont les choses sont faites, notamment
+pour la récupération des valeurs de paramètre.
+
+** 0.2.2
+
+Entrée : nom du fichier source, paramètres donnés par la ligne de commande
+Sortie : nom du fichier, avec chemin, de l'exécutable généré
+
+#+name: ob-rust-0.2.2
+#+BEGIN_SRC elisp
+  (require 'ob)
+
+  (defvar org-babel-tangle-lang-exts)
+  (add-to-list 'org-babel-tangle-lang-exts '("rust" . "rs"))
+
+  (defcustom org-babel-rust-command "rustc"
+    "Name of the rust command."
+    :group 'org-babel
+    :type 'string)
+
+  (defun org-babel-execute:rust (body params)
+    (let* ((full-body (org-babel-expand-body:generic body params))
+           (cmpflag (or (cdr (assq :cmpflag params)) ""))
+           (cmdline (or (cdr (assq :cmdline params)) ""))
+           (default-directory org-babel-temporary-directory)
+           (src-file (org-babel-temp-file "rust-src-" ".rs"))
+           (exe-file (org-babel-rust-exe-file src-file cmpflag))
+           (results))
+      (with-temp-file src-file (insert full-body))
+      (org-babel-eval
+       (format "%s %s %s" org-babel-rust-command cmpflag src-file) "")
+      (setq results (org-babel-eval (format "%s %s" exe-file cmdline) ""))
+      (org-babel-reassemble-table
+       (org-babel-result-cond (cdr (assq :result-params params))
+         (org-babel-read results)
+         (let ((tmp-file (org-babel-temp-file "rs-")))
+           (with-temp-file tmp-file (insert results))
+           (org-babel-import-elisp-from-file tmp-file)))
+       (org-babel-pick-name
+        (cdr (assq :colname-names params)) (cdr (assq :colnames params)))
+       (org-babel-pick-name
+        (cdr (assq :rowname-names params)) (cdr (assq :rownames params))))))
+
+  ;;; Helper functions.
+
+  (defun org-babel-rust-exe-file (src-file cmpflag)
+    "Compute the executable name according to the parameters
+     given to the command line. It assumes that the source file
+     has been created at (org-babel-temporary-directory)."
+    (if (eq cmpflag "")
+        (file-name-sans-extension src-file)
+      (let* ((out-file (nth 1 (member "-o" (split-string cmpflag " "))))
+             (out-dir (nth 1 (member "--out-dir" (split-string cmpflag " ")))))
+        (cond
+         (out-file
+          (if (string-match-p "/" out-file) ;naive file path detection
+              out-file
+            (format "%s/%s" org-babel-temporary-directory out-file)))
+         (out-dir
+          (format "%s/%s" out-dir (file-name-base src-file)))
+         (t
+          (file-name-sans-extension src-file))))))
+
+  (provide 'ob-rust)
+#+END_SRC
+
+#+RESULTS: ob-rust-0.2.2
+: ob-rust
+
+*** Tests
+    :PROPERTIES:
+    :CUSTOM_ID: 0.2.2-tests
+    :END:
+
+Identiques aux tests de la 0.2.1 : [[#0.2.1-tests]].
+
+*** Review
+    :PROPERTIES:
+    :CUSTOM_ID: 0.2.2-review
+    :END:
+
+Pas de difficultés particulières, la fonction se contente de reprendre le code existant en ajoutant
+juste une condition pour le cas où la ligne d'arguments serait vide. Les améliorations possibles
+citées en [[#0.2.1-review]] sont toujours d'actualités mais ne se mélangeront plus au code de la fonction
+principale.
+
+*** Next
+    :PROPERTIES:
+    :CUSTOM_ID: 0.2.2-next
+    :END:
+
+Ajouter la possibilité de ne pas spécifier la fonction =main= dans le bloc source de babel mais
+d'avoir le fichier source généré correctement dans tous les cas.
+
+** 0.3
+
+Quelques tests pour voir ce qui est autorisé en rust ou pas.
+
+Est-ce qu'on a besoin de séparer les =use:xxx;= du bloc main ou pas ?
+#+BEGIN_SRC rust :cmdline 1 2 bonjour :results raw
+  fn main() {
+      use std::env;
+
+      let args: Vec<String> = env::args().collect();
+      println!("{:?}", args);
+  }
+#+END_SRC
+
+#+RESULTS:
+["/tmp/babel-7991_kk/rust-src-7991Tay" (\, "1") (\, "2") (\, "bonjour")]
+
+Visiblement non.
+
+Et est-ce qu'il faut séparer les déclarations de fonctions du code main ou pas ?
+#+BEGIN_SRC rust :results verbatim
+  fn main() {
+      fn add(a: usize, b: usize) -> usize {
+          a + b
+      }
+
+      println!("{:?}", add(3,4));
+  }
+#+END_SRC
+
+#+RESULTS:
+: 7
+
+Non plus.
+
+Donc notre wrapper peut se contenter d'être extrêmement simple, en encapsulant tout le code dans une
+fonction =main=. Pour faire cela je vais m'inspirer du code de =ob-lua= et préparer une string dans
+laquelle insérer le code dource via un format. Il faudra aussi que je détecte si une fonction main est
+fournie ou pas dans le code source avant de faire l'éventuel traitement.
+
+
+#+name: ob-rust-0.3
+#+BEGIN_SRC elisp
+  (require 'ob)
+
+  (defvar org-babel-tangle-lang-exts)
+  (add-to-list 'org-babel-tangle-lang-exts '("rust" . "rs"))
+
+  (defcustom org-babel-rust-command "rustc"
+    "Name of the rust command."
+    :group 'org-babel
+    :type 'string)
+
+  (defun org-babel-execute:rust (body params)
+    (let* ((full-body (org-babel-expand-body:rust body params))
+           (cmpflag (or (cdr (assq :cmpflag params)) ""))
+           (cmdline (or (cdr (assq :cmdline params)) ""))
+           (default-directory org-babel-temporary-directory)
+           (src-file (org-babel-temp-file "rust-src-" ".rs"))
+           (exe-file (org-babel-rust-exe-file src-file cmpflag))
+           (results))
+      (debug)
+      (with-temp-file src-file (insert full-body))
+      (org-babel-eval
+       (format "%s %s %s" org-babel-rust-command cmpflag src-file) "")
+      (setq results (org-babel-eval (format "%s %s" exe-file cmdline) ""))
+      (org-babel-reassemble-table
+       (org-babel-result-cond (cdr (assq :result-params params))
+         (org-babel-read results)
+         (let ((tmp-file (org-babel-temp-file "rs-")))
+           (with-temp-file tmp-file (insert results))
+           (org-babel-import-elisp-from-file tmp-file)))
+       (org-babel-pick-name
+        (cdr (assq :colname-names params)) (cdr (assq :colnames params)))
+       (org-babel-pick-name
+        (cdr (assq :rowname-names params)) (cdr (assq :rownames params))))))
+
+  ;;; Helper functions.
+
+  (defun org-babel-rust-exe-file (src-file cmpflag)
+    "Compute the executable name according to the parameters given
+     to the command line. It assumes that the source file has been
+     created at (org-babel-temporary-directory). For spaces to be
+     correctly recognized they need to be escaped."
+    (if (string= cmpflag "")
+        (file-name-sans-extension src-file)
+      (let* ((flag-list (split-string cmpflag " "))
+             (out-file (nth 1 (member "-o" flag-list)))
+             (out-dir (nth 1 (member "--out-dir" flag-list))))
+        (cond
+         (out-file
+          (if (string-match-p "^/" out-file) ;naive absolute file path detection
+              (expand-file-name out-file "/")
+            (expand-file-name out-file org-babel-temporary-directory)))
+         (out-dir
+          (expand-file-name (file-name-base src-file) (file-name-as-directory out-dir)))
+         (t
+          (file-name-sans-extension src-file))))))
+
+  (defun org-babel-rust-ensure-main-wrap (body)
+    "Wrap BODY in a \"main\" function call if none exists."
+    (if (string-match org-babel-rust-main-regexp body)
+        body
+      (format org-babel-rust-main-wrapper body)))
+
+  (defun org-babel-expand-body:rust (body params)
+    "Expand a block of rust code with org-babel according to its
+  header arguments."
+    (let* ((main-p (not (string= (cdr (assq :main params)) "no")))
+           (uses (org-babel-read (cdr (assq :use params)) nil)))
+      (when (stringp uses)
+        (setq uses (split-string uses)))
+      (mapconcat
+       'identity
+       (list
+        ;;uses
+        (mapconcat
+         (lambda (use) (format "use %s;" use))
+         uses
+         "\n")
+        (when main-p
+          (org-babel-rust-ensure-main-wrap body)))
+       "\n")))
+
+  (defvar org-babel-rust-main-regexp
+    "^[ \t]*[fun]+[ \t\n\r]*main[ \t]*(.*)")
+
+  (defvar org-babel-rust-main-wrapper
+    "
+  fn main() {
+    %s
+  }
+  ")
+#+END_SRC
+
+#+RESULTS: ob-rust-0.3
+: org-babel-rust-main-wrapper
+
+*** Tests
+    :PROPERTIES:
+    :CUSTOM_ID: 0.3-tests
+    :END:
+
+S'exécute normalement, le fichier source généré a tout encapsulé dans une fonction =main=.
+*résultat attendu* : Hello, world!
+#+BEGIN_SRC rust :results verbatim
+  println!("Hello, world!");
+#+END_SRC
+
+#+RESULTS:
+: Hello, world!
+
+S'exécute normalement, aucun traitement n'a été effectué sur le code source.
+*résultat attendu* : Hello, world!
+#+BEGIN_SRC rust :results verbatim
+  fn main() {
+      println!("Hello, world!");
+  }
+#+END_SRC
+
+#+RESULTS:
+: Hello, world!
+
+Ajoute la directive =use= donnée en argument et exécute le code correctement.
+*résultat attendu* : ["filename" (\, "1") (\, "2") (\, "bonjour")]
+#+BEGIN_SRC rust :use std::env std::thread :cmdline 1 2 bonjour :results verbatim
+  let args: Vec<String> = env::args().collect();
+  println!("{:?}", args);
+#+END_SRC
+
+#+RESULTS:
+: ["/tmp/babel-7991_kk/rust-src-79912h2" (\, "1") (\, "2") (\, "bonjour")]
+
+Ajoute la directive =use= donnée en argument et exécute le code correctement.
+*résultat attendu* : ["filename" (\, "1") (\, "2") (\, "bonjour")]
+#+BEGIN_SRC rust :use std::thread :cmdline 1 2 bonjour :results verbatim
+  use std::env;
+
+  let args: Vec<String> = env::args().collect();
+  println!("{:?}", args);
+#+END_SRC
+
+#+RESULTS:
+: ["/tmp/babel-7991_kk/rust-src-7991QLf" (\, "1") (\, "2") (\, "bonjour")]
+
+Ajoute la directive =use= donnée en argument et exécute le code correctement.
+*résultat attendu* : ["filename" (\, "1") (\, "2") (\, "bonjour")]
+#+BEGIN_SRC rust :use std::thread :cmdline 1 2 bonjour :results verbatim
+  use std::env;
+
+  fn main() {
+      let args: Vec<String> = env::args().collect();
+      println!("{:?}", args);
+  }
+#+END_SRC
+
+#+RESULTS:
+: ["/tmp/babel-7991_kk/rust-src-7991djN" (\, "1") (\, "2") (\, "bonjour")]
+
+*** Review
+    :PROPERTIES:
+    :CUSTOM_ID: 0.3-review
+    :END:
+
+Temps : ~1h30
+
+Je m'attendais à ce que ça soit plus compliqué que ça, mais il n'y a pas eu de grosses difficultés. Le
+code est en bonne partie du copier-coller du code fourni par =ob-C=, avec quelques ajustements.
+
+La plus grosse différence est que je pense avoir fait ça plus proprement en appelant la fonction qui
+expand mon code source =org-babel-expand-body:rust=, ce qui fait qu'on s'y retrouve avec les autres
+langages. J'ai écrit cette fonction de manière à pouvoir facilement ajouter d'autres fonctionnalités,
+notamment l'ajout des =use::xxx;= par paramètre dans le bloc source, et des variables.
+
+Temps : ~10mns
+
+J'en ai profité pour ajouter vite fait l'inclusion des directives =use= dans les arguments du bloc
+source. L'ajout s'est fait facilement et tout a fonctionné du premier coup.
+
+*** Next
+    :PROPERTIES:
+    :CUSTOM_ID: 0.3-next
+    :END:
+
+Ajouter la possibilité de fournir des variables en argument du bloc source, notamment pour pouvoir
+lier les blocs avec les résultats d'autres blocs.
+
+** 0.4
+
+   #+name: ob-rust-0.4
+   #+BEGIN_SRC elisp :tangle ob-rust.el
+  (require 'ob)
+
+  (defvar org-babel-tangle-lang-exts)
+  (add-to-list 'org-babel-tangle-lang-exts '("rust" . "rs"))
+
+  (defcustom org-babel-rust-command "rustc"
+    "Name of the rust command."
+    :group 'org-babel
+    :type 'string)
+
+  (defun org-babel-execute:rust (body params)
+    (let* ((full-body (org-babel-expand-body:rust body params))
+           (cmpflag (or (cdr (assq :cmpflag params)) ""))
+           (cmdline (or (cdr (assq :cmdline params)) ""))
+           (default-directory org-babel-temporary-directory)
+           (src-file (org-babel-temp-file "rust-src-" ".rs"))
+           (exe-file (org-babel-rust-exe-file src-file cmpflag))
+           (results))
+      (with-temp-file src-file
+        (insert full-body)
+        (when (require 'rust-mode nil t)
+          (rust-format-buffer)))
+      (org-babel-eval
+       (format "%s %s %s" org-babel-rust-command cmpflag src-file) "")
+      (setq results (org-babel-eval (format "%s %s" exe-file cmdline) ""))
+      (org-babel-reassemble-table
+       (org-babel-result-cond (cdr (assq :result-params params))
+         (org-babel-read results)
+         (let ((tmp-file (org-babel-temp-file "rs-")))
+           (with-temp-file tmp-file (insert results))
+           (org-babel-import-elisp-from-file tmp-file)))
+       (org-babel-pick-name
+        (cdr (assq :colname-names params)) (cdr (assq :colnames params)))
+       (org-babel-pick-name
+        (cdr (assq :rowname-names params)) (cdr (assq :rownames params))))))
+
+    ;;; Helper functions.
+
+  (defun org-babel-rust-exe-file (src-file cmpflag)
+    "Compute the executable name according to the parameters given
+     to the command line. It assumes that the source file has been
+     created at (org-babel-temporary-directory). For spaces to be
+     correctly recognized they need to be escaped."
+    (if (string= cmpflag "")
+        (file-name-sans-extension src-file)
+      (let* ((flag-list (split-string cmpflag " "))
+             (out-file (nth 1 (member "-o" flag-list)))
+             (out-dir (nth 1 (member "--out-dir" flag-list))))
+        (cond
+         (out-file
+          (if (string-match-p "^/" out-file) ;naive absolute file path detection
+              (expand-file-name out-file "/")
+            (expand-file-name out-file org-babel-temporary-directory)))
+         (out-dir
+          (expand-file-name (file-name-base src-file) (file-name-as-directory out-dir)))
+         (t
+          (file-name-sans-extension src-file))))))
+
+  (defun org-babel-rust-ensure-main-wrap (body vars)
+    "Wrap BODY in a \"main\" function call if none exist. Inserts
+    the variables right after the main declaration, regardless of
+    the \"main\" existence."
+    (let ((rust-main-regexp "^[ \t]*fn[ \t\n\r]*main[ \t]*()[ \t\n]*{[ \t]*")
+          (rust-main-wrapper "fn main() {\n\t%s\n\t%s\n}")
+          (pos nil))
+      (if (string-match rust-main-regexp body)
+          (progn
+            (setq pos (match-end 0))
+            (concat
+             (substring body 0 pos)
+             "\n"
+             (mapconcat 'org-babel-rust-var-to-rust vars "\n")
+             (substring body pos nil)))
+        (format
+         rust-main-wrapper
+         (mapconcat 'org-babel-rust-var-to-rust vars "\n")
+         body))))
+
+  (defun org-babel-expand-body:rust (body params)
+    "Expand a block of rust code with org-babel according to its
+    header arguments."
+    (let* ((main-p (not (string= (cdr (assq :main params)) "no")))
+           (uses (org-babel-read (cdr (assq :use params)) nil))
+           (vars (org-babel--get-vars params)))
+      (when (stringp uses)
+        (setq uses (split-string uses)))
+      (mapconcat
+       'identity
+       (list
+        ;; uses
+        (mapconcat
+         (lambda (use) (format "use %s;" use))
+         uses
+         "\n")
+        ;; main vith vars if present
+        (org-babel-rust-ensure-main-wrap body vars))
+       "\n\t")))
+
+  (defun org-babel-rust-val-to-rust-type (val)
+    "Infers the correct rust data type from the value of the given
+    argument."
+    (cond
+     ((symbolp val)
+      (if (= (length (symbol-name val)) 1)
+          'char
+        '&str))
+     ((stringp val)
+      '&str)
+     ((integerp val)
+      'isize)
+     ((floatp val)
+      'f64)
+     (t
+      nil)))
+
+  (defun org-babel-rust-var-to-rust (var-pairs)
+    "Formats a given variable name, variable value pair according
+    to its type in correct rust.
+
+    The variable name follows the following rules :
+
+    - if the name starts with \"mut_\", the variable will be
+    declared as mutable in rust code, and be referenced by its name
+    minus the \"mut\",
+
+    - if the name is followed by a \":\", the text preceding the
+    \"=\" sign will be treated as its type. If no type is given one
+    will be infered."
+    (let* ((var (car var-pairs))
+           (val (cdr var-pairs))
+           (value-type (org-babel-rust-val-to-rust-type val))
+           (var-s (symbol-name var))
+           (var-regexp "\\(^mut_\\)?\\([[:alnum:]_]+\\)\\(: ?[[:alnum:]]+\\)?[ \t]*$")
+           (mut
+            (progn
+              (string-match var-regexp var-s)
+              (match-string 1 var-s)))
+           (var-name
+            (progn
+              (string-match var-regexp var-s)
+              (match-string 2 var-s)))
+           (var-type
+            (or
+             (progn
+               (string-match var-regexp var-s)
+               (match-string 3 var-s))
+             (format ":%s" (symbol-name (org-babel-rust-val-to-rust-type val)))))
+           (pre (format "let %s"
+                        (if (string-match "^mut_" var-s)
+                            (concat "mut " (substring var-s (match-end 0) nil))
+                          var)))
+           (value (cond
+                   ((string-match-p ": ?[iuf]" var-type) (format "%s" val))
+                   ((string-match-p ": ?char" var-type) (format "'%s'" val))
+                   (t (format "\"%s\"" val)))))
+      (setq mut (when mut "mut "))
+      (concat "let " mut var-name var-type " = " value ";")))
+
+  (provide 'ob-rust)
+   #+END_SRC
+
+   #+RESULTS: ob-rust-0.4
+   : ob-rust
+
+*** Tests
+    :PROPERTIES:
+    :CUSTOM_ID: 0.4-tests
+    :END:
+
+    A tester avec plusieurs types de variables :
+    + entier
+    + float
+    + caractère
+    + chaine
+
+    #+BEGIN_SRC rust :results verbatim :var test=3
+  println!("{:?}", test);
+    #+END_SRC
+
+    #+RESULTS:
+    : 3
+
+    #+BEGIN_SRC rust :results verbatim :var test=3.14
+  println!("{:?}", test);
+    #+END_SRC
+
+    #+RESULTS:
+    : 3.14
+
+    #+BEGIN_SRC rust :results verbatim :var test='a'
+  println!("{:?}", test);
+    #+END_SRC
+
+    #+RESULTS:
+    : a
+
+    #+BEGIN_SRC rust :results verbatim :var test="bonjour"
+  println!("{:?}", test);
+    #+END_SRC
+
+    #+RESULTS:
+    : bonjour
+
+    #+BEGIN_SRC rust :results verbatim :var test_int=3 test_float=3.14 test_char='a' test_string="bonjour"
+  fn main() {
+      println!("{:?}", test_int);
+      println!("{:?}", test_float);
+      println!("{:?}", test_char);
+      println!("{:?}", test_string);
+  }
+    #+END_SRC
+
+    #+RESULTS:
+    : 3
+    : 3.14
+    : 'a'
+    : "bonjour"
+
+    #+BEGIN_SRC rust :results verbatim :var mut_test=3
+  test = 5;
+  println!("{:?}", test);
+    #+END_SRC
+
+    #+RESULTS:
+    : 5
+
+    #+BEGIN_SRC rust :results verbatim :var prout:i32=4
+  println!("{:?}", prout);
+    #+END_SRC
+
+    #+RESULTS:
+    : 4
+
+    #+BEGIN_SRC rust :results verbatim :var mut_prout:i64=4
+  prout = 16;
+  println!("{:?}", prout);
+    #+END_SRC
+
+    #+RESULTS:
+    : 16
+
+*** Review
+    :PROPERTIES:
+    :CUSTOM_ID: 0.4-review
+    :END:
+
+    Ce qui a été réalisé :
+    + passage de paramètres à un bloc source rust via =:var=
+    + sont supportés :
+      + nombres entiers
+      + nombres flottants
+      + caractères
+      + chaines de caractères
+    + un type par défaut est choisi pour chacun
+    + il est possible de spécifier un type en ajoutant =:type= après le nom de la variable
+    + il est possible de déclarer la variable comme mutable si le nom de la variable commence par =_mut=,
+      la variable sera ensuite exempte de ce préfixe dans le code
+    + les variables ainsi crées sont placées en début de la fonction =main=, qu'elle ait été explicitement
+      fournie ou non
+
+    Concepts vus :
+    + expressions régulières
+
+    Je suis assez content du résultat, même si le code n'est pas tout à fait propre il fait bien ce que je
+    lui demande.
+
+*** Next
+    :PROPERTIES:
+    :CUSTOM_ID: 0.4-next
+    :END:
+    
+** 0.4.1
+
+   Ajouter le support pour les booléens en rust.
+   
+   #+name: 0.4.1
+   #+BEGIN_SRC elisp :tangle ob-rust.el
+     (require 'ob)
+
+     (defvar org-babel-tangle-lang-exts)
+     (add-to-list 'org-babel-tangle-lang-exts '("rust" . "rs"))
+
+     (defcustom org-babel-rust-command "rustc"
+       "Name of the rust command."
+       :group 'org-babel
+       :type 'string)
+
+     (defun org-babel-execute:rust (body params)
+       (let* ((full-body (org-babel-expand-body:rust body params))
+              (cmpflag (or (cdr (assq :cmpflag params)) ""))
+              (cmdline (or (cdr (assq :cmdline params)) ""))
+              (default-directory org-babel-temporary-directory)
+              (src-file (org-babel-temp-file "rust-src-" ".rs"))
+              (exe-file (org-babel-rust-exe-file src-file cmpflag))
+              (results))
+         (with-temp-file src-file
+           (insert full-body)
+           (when (require 'rust-mode nil t)
+             (rust-format-buffer)))
+         (org-babel-eval
+          (format "%s %s %s" org-babel-rust-command cmpflag src-file) "")
+         (setq results (org-babel-eval (format "%s %s" exe-file cmdline) ""))
+         (org-babel-reassemble-table
+          (org-babel-result-cond (cdr (assq :result-params params))
+            (org-babel-read results)
+            (let ((tmp-file (org-babel-temp-file "rs-")))
+              (with-temp-file tmp-file (insert results))
+              (org-babel-import-elisp-from-file tmp-file)))
+          (org-babel-pick-name
+           (cdr (assq :colname-names params)) (cdr (assq :colnames params)))
+          (org-babel-pick-name
+           (cdr (assq :rowname-names params)) (cdr (assq :rownames params))))))
+
+       ;;; Helper functions.
+
+     (defun org-babel-rust-exe-file (src-file cmpflag)
+       "Compute the executable name according to the parameters given
+        to the command line. It assumes that the source file has been
+        created at (org-babel-temporary-directory). For spaces to be
+        correctly recognized they need to be escaped."
+       (if (string= cmpflag "")
+           (file-name-sans-extension src-file)
+         (let* ((flag-list (split-string cmpflag " "))
+                (out-file (nth 1 (member "-o" flag-list)))
+                (out-dir (nth 1 (member "--out-dir" flag-list))))
+           (cond
+            (out-file
+             (if (string-match-p "^/" out-file) ;naive absolute file path detection
+                 (expand-file-name out-file "/")
+               (expand-file-name out-file org-babel-temporary-directory)))
+            (out-dir
+             (expand-file-name (file-name-base src-file) (file-name-as-directory out-dir)))
+            (t
+             (file-name-sans-extension src-file))))))
+
+     (defun org-babel-rust-ensure-main-wrap (body vars)
+       "Wrap BODY in a \"main\" function call if none exist. Inserts
+       the variables right after the main declaration, regardless of
+       the \"main\" existence."
+       (let ((rust-main-regexp "^[ \t]*fn[ \t\n\r]*main[ \t]*()[ \t\n]*{[ \t]*")
+             (rust-main-wrapper "fn main() {\n\t%s\n\t%s\n}")
+             (pos nil))
+         (if (string-match rust-main-regexp body)
+             (progn
+               (setq pos (match-end 0))
+               (concat
+                (substring body 0 pos)
+                "\n"
+                (mapconcat 'org-babel-rust-var-to-rust vars "\n")
+                (substring body pos nil)))
+           (format
+            rust-main-wrapper
+            (mapconcat 'org-babel-rust-var-to-rust vars "\n")
+            body))))
+
+     (defun org-babel-expand-body:rust (body params)
+       "Expand a block of rust code with org-babel according to its
+       header arguments."
+       (let* ((main-p (not (string= (cdr (assq :main params)) "no")))
+              (uses (org-babel-read (cdr (assq :use params)) nil))
+              (vars (org-babel--get-vars params)))
+         (when (stringp uses)
+           (setq uses (split-string uses)))
+         (mapconcat
+          'identity
+          (list
+           ;; uses
+           (mapconcat
+            (lambda (use) (format "use %s;" use))
+            uses
+            "\n")
+           ;; main vith vars if present
+           (org-babel-rust-ensure-main-wrap body vars))
+          "\n\t")))
+
+     (defun org-babel-rust-val-to-rust-type (val)
+       "Infers the correct rust data type from the value of the given
+       argument."
+       (cond
+        ((symbolp val)
+         (cond
+          ((= (length (symbol-name val)) 1) 'char)
+          ((or (string= val "true") (string= val "false")) 'bool)
+          (t '&str)))
+        ((stringp val)
+         (cond
+          ((or (string= val "true") (string= val "false")) 'bool)
+          (t '&str)))
+        ((integerp val)
+         'isize)
+        ((floatp val)
+         'f64)
+        (t
+         nil)))
+
+     (defun org-babel-rust-var-to-rust (var-pairs)
+       "Formats a given variable name, variable value pair according
+     to its type in correct rust.
+
+     The variable name follows the following rules :
+
+     - if the name starts with \"mut_\", the variable will be declared
+     as mutable in rust code, and be referenced by its name minus the
+     \"mut\",
+
+     - if the name is followed by a \":\", the text preceding the
+     \"=\" sign will be treated as its type. If no type is given one
+     will be infered."
+       (let* ((var (car var-pairs))
+              (val (cdr var-pairs))
+              (value-type (org-babel-rust-val-to-rust-type val))
+              (var-s (symbol-name var))
+              (var-regexp "\\(^mut_\\)?\\([[:alnum:]_]+\\)\\(: ?[[:alnum:]]+\\)?[ \t]*$")
+              (mut
+               (progn
+                 (string-match var-regexp var-s)
+                 (match-string 1 var-s)))
+              (var-name
+               (progn
+                 (string-match var-regexp var-s)
+                 (match-string 2 var-s)))
+              (var-type
+               (or
+                (progn
+                  (string-match var-regexp var-s)
+                  (match-string 3 var-s))
+                (format ":%s" (symbol-name (org-babel-rust-val-to-rust-type val)))))
+              (pre (format "let %s"
+                           (if (string-match "^mut_" var-s)
+                               (concat "mut " (substring var-s (match-end 0) nil))
+                             var)))
+              (value (cond
+                      ((string-match-p ": ?[iuf]" var-type) (format "%s" val))
+                      ((string-match-p ": ?bool" var-type) (format "%s" val))
+                      ((string-match-p ": ?char" var-type) (format "'%s'" val))
+                      (t (format "\"%s\"" val)))))
+         (setq mut (when mut "mut "))
+         (concat "let " mut var-name var-type " = " value ";")))
+
+     (provide 'ob-rust)
+   #+END_SRC
+
+   #+RESULTS: 0.4.1
+   : ob-rust
+
+   
+   #+BEGIN_SRC rust :results verbatim :var test='true
+  if test {
+    println!("42");
+  }
+   #+END_SRC
+
+   #+RESULTS:
+   : 42
+   
+#+BEGIN_SRC rust :results verbatim :var test="false"
+  if !test {
+    println!("42");
+  }
+   #+END_SRC
+
+   #+RESULTS:
+   : 42
+
+** 0.5 : first patch
+
+   #+name: 0.5
+   #+BEGIN_SRC elisp :tangle ~/src/org-mode/contrib/lisp/ob-rust.el
+     ;;; ob-rust.el --- Babel Functions for rust -*- lexical-binding: t; -*-
+
+     ;; Copyright (C) 2017 Free Software Foundation, Inc.
+
+     ;; Author: Andrés Saraos Luna
+     ;; Keywords: literate programming, reproducible research
+     ;; Homepage: http://orgmode.org
+
+     ;; This file is part of GNU Emacs.
+
+     ;; GNU Emacs is free software: you can redistribute it and/or modify
+     ;; it under the terms of the GNU General Public License as published by
+     ;; the Free Software Foundation, either version 3 of the License, or
+     ;; (at your option) any later version.
+
+     ;; GNU Emacs is distributed in the hope that it will be useful,
+     ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+     ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+     ;; GNU General Public License for more details.
+
+     ;; You should have received a copy of the GNU General Public License
+     ;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
+
+     ;;; Commentary:
+
+     ;; Org-Babel support for evaluating rust code.
+     ;;
+     ;; A currently very limited implementation:
+     ;;  - arrays, vecs, lists or tables are not yet supported as header
+     ;;  arguments
+     ;;  - no error handling
+     ;;  - only :results output is supported
+     ;;  - cargo is completely ignored
+
+     (require 'ob)
+
+     (defvar org-babel-tangle-lang-exts)
+     (add-to-list 'org-babel-tangle-lang-exts '("rust" . "rs"))
+
+     (defcustom org-babel-rust-command "rustc"
+       "Name of the rust command."
+       :group 'org-babel
+       :type 'string)
+
+     (defun org-babel-execute:rust (body params)
+       (let* ((full-body (org-babel-expand-body:rust body params))
+              (cmpflag (or (cdr (assq :cmpflag params)) ""))
+              (cmdline (or (cdr (assq :cmdline params)) ""))
+              (default-directory org-babel-temporary-directory)
+              (src-file (org-babel-temp-file "rust-src-" ".rs"))
+              (exe-file (org-babel-rust-exe-file src-file cmpflag))
+              (results))
+         (with-temp-file src-file
+           (insert full-body)
+           (when (require 'rust-mode nil t)
+             (rust-format-buffer)))
+         (org-babel-eval
+          (format "%s %s %s" org-babel-rust-command cmpflag src-file) "")
+         (setq results (org-babel-eval (format "%s %s" exe-file cmdline) ""))
+         (org-babel-reassemble-table
+          (org-babel-result-cond (cdr (assq :result-params params))
+            (org-babel-read results)
+            (let ((tmp-file (org-babel-temp-file "rs-")))
+              (with-temp-file tmp-file (insert results))
+              (org-babel-import-elisp-from-file tmp-file)))
+          (org-babel-pick-name
+           (cdr (assq :colname-names params)) (cdr (assq :colnames params)))
+          (org-babel-pick-name
+           (cdr (assq :rowname-names params)) (cdr (assq :rownames params))))))
+
+     (defun org-babel-expand-body:rust (body params)
+       "Expand a block of rust code with org-babel according to its
+     header arguments."
+       (let* ((main-p (not (string= (cdr (assq :main params)) "no")))
+              (uses (org-babel-read (cdr (assq :use params)) nil))
+              (vars (org-babel--get-vars params)))
+         (when (stringp uses)
+           (setq uses (split-string uses)))
+         (mapconcat
+          'identity
+          (list
+           ;; uses
+           (mapconcat
+            (lambda (use) (format "use %s;" use))
+            uses
+            "\n")
+           ;; main vith vars if present
+           (org-babel-rust-ensure-main-wrap body vars))
+          "\n\t")))
+
+     (defun org-babel-prep-session:rust (_session _params)
+       "This function does nothing as C is a compiled language with no
+     support for sessions"
+       (error "no support for sessions"))
+
+     (defun org-babel-load-session:rust (_session _body _params)
+       "This function does nothing as C is a compiled language with no
+     support for sessions"
+       (error "no support for sessions"))
+
+     ;;; Helper functions.
+
+     (defun org-babel-rust-exe-file (src-file cmpflag)
+       "Compute the executable name according to the parameters given
+     to the command line. It assumes that the source file has been
+     created at (org-babel-temporary-directory). For spaces to be
+     correctly recognized they need to be escaped."
+       (if (string= cmpflag "")
+           (file-name-sans-extension src-file)
+         (let* ((flag-list (split-string cmpflag " "))
+                (out-file (nth 1 (member "-o" flag-list)))
+                (out-dir (nth 1 (member "--out-dir" flag-list))))
+           (cond
+            (out-file
+             (if (string-match-p "^/" out-file) ;naive absolute file path detection
+                 (expand-file-name out-file "/")
+               (expand-file-name out-file org-babel-temporary-directory)))
+            (out-dir
+             (expand-file-name (file-name-base src-file) (file-name-as-directory out-dir)))
+            (t
+             (file-name-sans-extension src-file))))))
+
+     (defun org-babel-rust-ensure-main-wrap (body vars)
+       "Wrap BODY in a \"main\" function call if none exist. Inserts
+     the variables right after the main declaration, regardless of the
+     \"main\" existence."
+       (let ((rust-main-regexp "^[ \t]*fn[ \t\n\r]*main[ \t]*()[ \t\n]*{[ \t]*")
+             (rust-main-wrapper "fn main() {\n\t%s\n\t%s\n}")
+             (pos nil))
+         (if (string-match rust-main-regexp body)
+             (progn
+               (setq pos (match-end 0))
+               (concat
+                (substring body 0 pos)
+                "\n"
+                (mapconcat 'org-babel-rust-var-to-rust vars "\n")
+                (substring body pos nil)))
+           (format
+            rust-main-wrapper
+            (mapconcat 'org-babel-rust-var-to-rust vars "\n")
+            body))))
+
+     (defun org-babel-rust-val-to-rust-type (val)
+       "Infers the correct rust data type from the value of the given
+     argument."
+       (cond
+        ((symbolp val)
+         (cond
+          ((= (length (symbol-name val)) 1) 'char)
+          ((or (string= val "true") (string= val "false")) 'bool)
+          (t '&str)))
+        ((stringp val)
+         (cond
+          ((or (string= val "true") (string= val "false")) 'bool)
+          (t '&str)))
+        ((integerp val)
+         'isize)
+        ((floatp val)
+         'f64)
+        (t
+         nil)))
+
+     (defun org-babel-rust-var-to-rust (var-pairs)
+       "Formats a given variable name, variable value pair according
+     to its type in correct rust.
+
+     The variable name follows the following rules :
+
+     - if the name starts with \"mut_\", the variable will be declared
+     as mutable in rust code, and be referenced by its name minus the
+     \"mut\",
+
+     - if the name is followed by a \":\", the text preceding the
+     \"=\" sign will be treated as its type. If no type is given one
+     will be infered."
+       (let* ((var (car var-pairs))
+              (val (cdr var-pairs))
+              (value-type (org-babel-rust-val-to-rust-type val))
+              (var-s (symbol-name var))
+              (var-regexp "\\(^mut_\\)?\\([[:alnum:]_]+\\)\\(: ?[[:alnum:]]+\\)?[ \t]*$")
+              (mut
+               (progn
+                 (string-match var-regexp var-s)
+                 (match-string 1 var-s)))
+              (var-name
+               (progn
+                 (string-match var-regexp var-s)
+                 (match-string 2 var-s)))
+              (var-type
+               (or
+                (progn
+                  (string-match var-regexp var-s)
+                  (match-string 3 var-s))
+                (format ":%s" (symbol-name (org-babel-rust-val-to-rust-type val)))))
+              (pre (format "let %s"
+                           (if (string-match "^mut_" var-s)
+                               (concat "mut " (substring var-s (match-end 0) nil))
+                             var)))
+              (value (cond
+                      ((string-match-p ": ?[iuf]" var-type) (format "%s" val))
+                      ((string-match-p ": ?bool" var-type) (format "%s" val))
+                      ((string-match-p ": ?char" var-type) (format "'%s'" val))
+                      (t (format "\"%s\"" val)))))
+         (setq mut (when mut "mut "))
+         (concat "let " mut var-name var-type " = " value ";")))
+
+     (provide 'ob-rust)
+   #+END_SRC
